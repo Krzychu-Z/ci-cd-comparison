@@ -1,5 +1,13 @@
-# Local .terraform directories
- **/.terraform/*
+# Terraform work dirs (ignore dir + contents, any depth)
+**/.terraform/
+**/.terraform/**
+
+# Keep lockfiles
+!**/.terraform.lock.hcl
+
+# State files
+**/*.tfstate
+**/*.tfstate.*
 
 #  Ignore variables files
  *.auto.tfvars
@@ -12,4 +20,4 @@
 
 #  Ignore CLI configuration files
  .terraformrc
- terraform.rc     
+ terraform.rc
