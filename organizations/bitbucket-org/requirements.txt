@@ -1,0 +1,2 @@
+requests>=2.31.0,<3
+atlassian-python-api>=4.0.7
