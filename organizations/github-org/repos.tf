@@ -3,7 +3,7 @@ resource "github_repository" "small-project" {
   description = var.small_project.description
   auto_init   = true
   delete_branch_on_merge = true
-  visibility = "public"
+  visibility = "private"
 
   template {
     owner      = "Krzychu-Z" 
@@ -40,7 +40,7 @@ resource "github_repository" "large-project" {
   description = var.large_project.description
   auto_init   = true
   delete_branch_on_merge = true
-  visibility = "public"
+  visibility = "private"
 
   template {
     owner      = "Krzychu-Z" 
@@ -48,6 +48,8 @@ resource "github_repository" "large-project" {
     include_all_branches = false
   }
 }
+
+
 
 resource "github_repository_ruleset" "large-project-pr-rules" {
   name        = "Require PR to master"
@@ -77,5 +79,5 @@ resource "github_repository" "pipelines-repository" {
   description = var.pipelines_repository.description
   auto_init   = true
   delete_branch_on_merge = true
-  visibility = "public"
+  visibility = "private"
 }
