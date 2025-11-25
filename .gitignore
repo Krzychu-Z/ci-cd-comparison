@@ -9,8 +9,8 @@
 **/*.tfstate
 **/*.tfstate.*
 
-#  Ignore variables files
- *.auto.tfvars
+#  Ignore variables files in environment directory
+environment/*.auto.tfvars
 
 #  Ignore override files
  *.tfoverride
