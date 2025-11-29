@@ -11,19 +11,6 @@ resource "gitlab_project" "small_project" {
   import_url = "https://github.com/Krzychu-Z/MODBUS-CRC16-Golang.git"
 }
 
-resource "gitlab_branch_protection" "small_master" {
-  project            = gitlab_project.small_project.id
-  branch             = "master"
-  push_access_level  = "no one"      # block direct pushes
-  merge_access_level = "maintainer"  # allow merges via MR
-  allow_force_push   = false
-}
-
-resource "gitlab_project_level_mr_approvals" "small_mr" {
-  project                                   = gitlab_project.small_project.id
-  disable_overriding_approvers_per_merge_request = true
-}
-
 # --- large-project (import from GitHub template) ---
 resource "gitlab_project" "large_project" {
   name                             = var.large_project.name
@@ -33,19 +20,6 @@ resource "gitlab_project" "large_project" {
   remove_source_branch_after_merge = true
   default_branch                   = "master"
   import_url                       = "https://github.com/Krzychu-Z/rust-compiler.git"
-}
-
-resource "gitlab_branch_protection" "large_master" {
-  project            = gitlab_project.large_project.id
-  branch             = "master"
-  push_access_level  = "no one"
-  merge_access_level = "maintainer"
-  allow_force_push   = false
-}
-
-resource "gitlab_project_level_mr_approvals" "large_mr" {
-  project                                   = gitlab_project.large_project.id
-  disable_overriding_approvers_per_merge_request = true
 }
 
 # --- pipelines-repository ---
