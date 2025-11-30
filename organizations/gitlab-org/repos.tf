@@ -11,6 +11,11 @@ resource "gitlab_project" "small_project" {
   import_url = "https://github.com/Krzychu-Z/MODBUS-CRC16-Golang.git"
 }
 
+resource "gitlab_branch_protection" "small_master" {
+  project            = gitlab_project.small_project.id
+  branch             = "master"
+}
+
 # --- large-project (import from GitHub template) ---
 resource "gitlab_project" "large_project" {
   name                             = var.large_project.name
@@ -20,6 +25,11 @@ resource "gitlab_project" "large_project" {
   remove_source_branch_after_merge = true
   default_branch                   = "master"
   import_url                       = "https://github.com/Krzychu-Z/rust-compiler.git"
+}
+
+resource "gitlab_branch_protection" "large_master" {
+  project            = gitlab_project.large_project.id
+  branch             = "master"
 }
 
 # --- pipelines-repository ---
