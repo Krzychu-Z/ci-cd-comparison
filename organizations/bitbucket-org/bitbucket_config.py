@@ -9,7 +9,8 @@ CONFIG = {
     'PROJECT_DESC': "Masters thesis project (created via atlassian-python-api)",
     'IS_PRIVATE': True,
     'CLIENT_ID': os.getenv("BB_CLIENT_ID"),
-    'CLIENT_SECRET': os.getenv("BB_CLIENT_SECRET")
+    'CLIENT_SECRET': os.getenv("BB_CLIENT_SECRET"),
+    'USER_ACCOUNT_ID': os.getenv("BB_USER_ACCOUNT_ID")
 }
 
 REPOS = [

@@ -12,28 +12,28 @@ resource "github_repository" "small-project" {
   }
 }
 
-resource "github_repository_ruleset" "small-project-pr-rules" {
-  name        = "Require PR to master"
-  repository  = github_repository.small-project.name
-  target      = "branch"
-  enforcement = "active"
+# resource "github_repository_ruleset" "small-project-pr-rules" {
+#   name        = "Require PR to master"
+#   repository  = github_repository.small-project.name
+#   target      = "branch"
+#   enforcement = "active"
 
-  conditions {
-    ref_name {
-      include = ["refs/heads/master"]
-      exclude = []
-    }
-  }
+#   conditions {
+#     ref_name {
+#       include = ["refs/heads/master"]
+#       exclude = []
+#     }
+#   }
 
-  rules {
-    pull_request {
-      required_approving_review_count = 1
-      dismiss_stale_reviews_on_push   = true
-    }
-  }
+#   rules {
+#     pull_request {
+#       required_approving_review_count = 1
+#       dismiss_stale_reviews_on_push   = true
+#     }
+#   }
 
-  depends_on = [ github_repository.small-project ]
-}
+#   depends_on = [ github_repository.small-project ]
+# }
 
 resource "github_repository" "large-project" {
   name        = var.large_project.name
@@ -47,31 +47,6 @@ resource "github_repository" "large-project" {
     repository = "rust-compiler"
     include_all_branches = false
   }
-}
-
-
-
-resource "github_repository_ruleset" "large-project-pr-rules" {
-  name        = "Require PR to master"
-  repository  = github_repository.large-project.name
-  target      = "branch"
-  enforcement = "active"
-
-  conditions {
-    ref_name {
-      include = ["refs/heads/master"]
-      exclude = []
-    }
-  }
-
-  rules {
-    pull_request {
-      required_approving_review_count = 1
-      dismiss_stale_reviews_on_push   = true
-    }
-  }
-
-  depends_on = [ github_repository.large-project ]
 }
 
 resource "github_repository" "pipelines-repository" {

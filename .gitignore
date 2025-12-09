@@ -26,6 +26,9 @@ environment/*.auto.tfvars
 **/venv/**
 **/.venv/**
 
+# Ignore runners-autoscaler directories
+**/runners-autoscaler/**
+
 # Ignore Python cache files
 **/__pycache__/**
 **/*.py[cod]** 

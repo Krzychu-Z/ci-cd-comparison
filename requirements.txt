@@ -1,0 +1,5 @@
+PyGithub>=2.8.1
+python-gitlab
+atlassian-python-api
+tqdm
+aiohttp>=3.9.0,<4.0

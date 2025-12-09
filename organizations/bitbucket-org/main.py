@@ -41,20 +41,39 @@ def main():
         print(f"Project already exists: {project.key} - {project.name}")
 
     # Create repositories as per configuration
+        # Create repositories as per configuration
     for r in bbconfig.REPOS:
-        slug = bbfuncs.create_repo_in_project(project, r["name"], headers_input=HEADERS, is_private=True)
+        slug = bbfuncs.create_repo_in_project(
+            project,
+            r["name"],
+            headers_input=HEADERS,
+            is_private=True,
+        )
 
         if r["import_url"]:
             # Use OAuth2 token for HTTPS git: user must be 'x-token-auth'
-            dst = f"https://x-token-auth:{tok['access_token']}@bitbucket.org/{bbconfig.CONFIG['WORKSPACE_SLUG']}/{slug}.git"
+            dst = (
+                f"https://x-token-auth:{tok['access_token']}"
+                f"@bitbucket.org/{bbconfig.CONFIG['WORKSPACE_SLUG']}/{slug}.git"
+            )
             bbfuncs.mirror_import(r["import_url"], dst)
         else:
             # init pipelines-repository with README on master
-            bbfuncs.init_readme(bbconfig.CONFIG["WORKSPACE_SLUG"], slug, headers_input=HEADERS, branch="master")
+            bbfuncs.init_readme(
+                bbconfig.CONFIG["WORKSPACE_SLUG"],
+                slug,
+                headers_input=HEADERS,
+                branch="master",
+            )
 
-        # Force PRs to change main/master (block direct pushes)
-        for branch in ("main", "master"):
-            bbfuncs.block_pushes(bbconfig.CONFIG["WORKSPACE_SLUG"], slug, branch, HEADERS)
+        # NEW: ensure your user has write access to this repo
+        bbfuncs.grant_user_write_access(
+            bbconfig.CONFIG["WORKSPACE_SLUG"],
+            slug,
+            bbconfig.CONFIG["USER_ACCOUNT_ID"],
+            headers_input=HEADERS,
+        )
+
 
     print("Done.")
 

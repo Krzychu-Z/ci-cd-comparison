@@ -2,7 +2,6 @@ import requests
 import tempfile
 import subprocess
 import shlex
-import os
 import re
 
 import bitbucket_config as bbconfig
@@ -38,14 +37,26 @@ def create_repo_in_project(proj, name, headers_input, is_private=True):
     r.raise_for_status()
     return slug
 
-def block_pushes(workspace, slug, pattern, headers_input):
-    r = requests.post(
-        f"{bbconfig.API}/repositories/{workspace}/{slug}/branch-restrictions",
+def grant_user_write_access(workspace: str, slug: str, user_account_id: str, headers_input):
+    """
+    Give a specific Bitbucket user explicit WRITE permission to a repository.
+
+    workspace: workspace slug
+    slug:      repo slug
+    user_account_id: Atlassian account_id of the user (e.g. '557058:ba89...')
+                     Must already be a member of the workspace.
+    """
+    url = f"{bbconfig.API}/repositories/{workspace}/{slug}/permissions-config/users/{user_account_id}"
+    payload = {"permission": "write"}
+
+    r = requests.put(
+        url,
         headers={**headers_input, "Content-Type": "application/json"},
-        json={"kind": "push", "pattern": pattern, "users": [], "groups": []},
+        json=payload,
         timeout=30,
     )
-    if r.status_code not in (200, 201, 409):
+
+    if r.status_code not in (200, 201):
         r.raise_for_status()
 
 def init_readme(workspace, slug, headers_input, branch="master"):
