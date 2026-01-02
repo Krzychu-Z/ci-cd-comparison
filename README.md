@@ -22,6 +22,16 @@ in a production environment.
 ##  2. <a name='Repositorystructure'></a>Repository structure
 ```
 .
+├── environment
+│   ├── bitbucket-arc.sh
+│   ├── eks.tf
+│   ├── github-arc.sh
+│   ├── gitlab-arc.sh
+│   ├── outputs.tf
+│   ├── s3.tf
+│   ├── terraform.tf
+│   └── variables.tf
+├── large-perf.py
 ├── LICENSE
 ├── organizations
 │   ├── bitbucket-org
@@ -34,16 +44,16 @@ in a production environment.
 │   ├── github-org
 │   │   ├── organization.tf
 │   │   ├── repos.tf
-│   │   ├── terraform.auto.tfvars
 │   │   ├── terraform.tf
 │   │   └── variables.tf
 │   └── gitlab-org
 │       ├── group.tf
 │       ├── repos.tf
-│       ├── terraform.auto.tfvars
 │       ├── terraform.tf
 │       └── variables.tf
-└── README.md
+├── README.md
+├── requirements.txt
+└── simple-perf.py
 ```
 
 ##  3. <a name='Deploymentinstructions'></a>Deployment instructions
