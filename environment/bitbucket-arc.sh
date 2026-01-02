@@ -10,7 +10,7 @@ set -euo pipefail
 
 BITBUCKET_NAMESPACE="${BITBUCKET_NAMESPACE:-bitbucket-runners}"
 BITBUCKET_AUTOSCALER_DIR="${BITBUCKET_AUTOSCALER_DIR:-./runners-autoscaler}"
-BITBUCKET_AUTOSCALER_VERSION="${BITBUCKET_AUTOSCALER_VERSION:-3.7.0}"
+BITBUCKET_AUTOSCALER_VERSION="${BITBUCKET_AUTOSCALER_VERSION:-3.9.0}"
 BITBUCKET_RUNNER_GROUP_NAME="${BITBUCKET_RUNNER_GROUP_NAME:-masters-thesis-runners}"
 
 install_bitbucket_autoscaler() {
@@ -34,6 +34,8 @@ install_bitbucket_autoscaler() {
   pushd "${BITBUCKET_AUTOSCALER_DIR}/kustomize" >/dev/null
 
   git fetch --all || true
+  git reset --hard
+  git clean -fd
   git checkout "${BITBUCKET_AUTOSCALER_VERSION}" || echo "   (could not checkout ${BITBUCKET_AUTOSCALER_VERSION}, using current branch)"
 
   # Base64-encode OAuth creds for the Secret patch (as docs require)

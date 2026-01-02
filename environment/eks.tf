@@ -75,16 +75,28 @@ module "eks" {
   }
 
   eks_managed_node_groups = {
-    on-demand-ng = {
+    spot-ng = {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = [var.instance_type]
 
-      # On-demand capacity
-      capacity_type = "ON_DEMAND"
+      # spot capacity
+      capacity_type = "SPOT"
 
-      min_size     = 1
+      min_size     = 2
       max_size     = 2
-      desired_size = 1
+      desired_size = 2
+
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 40          # 40 GiB root disk
+            volume_type           = "gp3"
+            delete_on_termination = true
+            encrypted             = true
+          }
+        }
+      }
 
       subnet_ids = module.vpc.private_subnets
 

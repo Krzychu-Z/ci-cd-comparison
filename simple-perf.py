@@ -27,6 +27,7 @@ BITBUCKET_CLIENT_SECRET = os.environ["BB_CLIENT_SECRET"]
 WORKSPACE = "masters-thesis-workspace"       
 REPO_SLUG = "small-project"             
 CUSTOM_PIPELINE_NAME = "simple-performance"
+CUSTOM_K8S_PIPELINE_NAME = "simple-performance-k8s"
 
 REF = "master"
 
@@ -53,7 +54,7 @@ def main():
     args = parser.parse_args()
 
 
-    for i in tqdm(range(1)):
+    for i in tqdm(range(2)):
         ###############################################
         # Github
         ###############################################
@@ -131,7 +132,7 @@ def main():
                 "ref_name": REF,
                 "selector": {
                     "type": "custom",
-                    "pattern": CUSTOM_PIPELINE_NAME,
+                    "pattern": CUSTOM_K8S_PIPELINE_NAME if args.self_hosted else CUSTOM_PIPELINE_NAME,
                 }
             },
             "variables": [

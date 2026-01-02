@@ -44,7 +44,7 @@ def get_bitbucket_access_token() -> str:
     return resp.json()["access_token"]
 
 
-for i in tqdm(range(1)):
+for i in tqdm(range(4)):
     ###############################################
     # Github
     ###############################################

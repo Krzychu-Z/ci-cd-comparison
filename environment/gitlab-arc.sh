@@ -23,6 +23,7 @@ if [[ -n "${GITLAB_REGISTRATION_TOKEN:-}" ]]; then
     --set gitlabUrl="${GITLAB_URL}" \
     --set runnerRegistrationToken="${GITLAB_REGISTRATION_TOKEN}" \
     --set rbac.create=true \
+    --set concurrent=12 \
     --set runners.tags="{eks,k8s}" \
     gitlab/gitlab-runner
 
