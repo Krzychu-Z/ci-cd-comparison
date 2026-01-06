@@ -26,6 +26,9 @@ environment/*.auto.tfvars
 **/venv/**
 **/.venv/**
 
+# Ignore terraform.auto.tfvars files
+**/*.auto.tfvars
+
 # Ignore runners-autoscaler directories
 **/runners-autoscaler/**
 
