@@ -13,21 +13,27 @@ from tqdm import tqdm
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_OWNER = "masters-thesis-org"
 GITHUB_REPO_NAME = "small-project"
+GITHUB_LARGE_REPO_NAME = "large-project"
+
 GITHUB_WORKFLOW_FILE = "simple.yml"
 GITHUB_SELF_HOSTED_WORKFLOW_FILE = "k8s.yml"
+GITHUB_LARGE_WORKFLOW_FILE = "manual-build.yml"
 
 # Gitlab vars
 GITLAB_TOKEN = os.environ["GITLAB_TOKEN"]
 GITLAB_OWNER = "masters-thesis-group"
 GITLAB_REPO_NAME = "small-project"
+GITLAB_LARGE_REPO_NAME = "large-project"
 
 # Bitbucket vars
 BITBUCKET_CLIENT_ID = os.environ["BB_CLIENT_ID"]
 BITBUCKET_CLIENT_SECRET = os.environ["BB_CLIENT_SECRET"]
 WORKSPACE = "masters-thesis-workspace"       
-REPO_SLUG = "small-project"             
+REPO_SLUG = "small-project"
+LARGE_REPO_SLUG = "large-project"
 CUSTOM_PIPELINE_NAME = "simple-performance"
 CUSTOM_K8S_PIPELINE_NAME = "simple-performance-k8s"
+LARGE_CUSTOM_PIPELINE_NAME = "rust-compiler-pipeline"
 
 REF = "master"
 
@@ -51,6 +57,7 @@ def get_bitbucket_access_token() -> str:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--self-hosted", action="store_true")
+    parser.add_argument("-l", "--large", action="store_true")
     args = parser.parse_args()
 
 
@@ -58,11 +65,15 @@ def main():
         ###############################################
         # Github
         ###############################################
-        repo = gh.get_repo(f"{GITHUB_OWNER}/{GITHUB_REPO_NAME}")
-        if args.self_hosted:
-            workflow = repo.get_workflow(GITHUB_SELF_HOSTED_WORKFLOW_FILE)
+        if args.large:
+            repo_name = GITHUB_LARGE_REPO_NAME
+            workflow_file = GITHUB_LARGE_WORKFLOW_FILE
         else:
-            workflow = repo.get_workflow(GITHUB_WORKFLOW_FILE)
+            repo_name = GITHUB_REPO_NAME
+            workflow_file = GITHUB_SELF_HOSTED_WORKFLOW_FILE if args.self_hosted else GITHUB_WORKFLOW_FILE
+
+        repo = gh.get_repo(f"{GITHUB_OWNER}/{repo_name}")
+        workflow = repo.get_workflow(workflow_file)
 
         # Timestamp
         now = datetime.now(UTC)
@@ -82,7 +93,12 @@ def main():
         ###############################################
         # Gitlab
         ###############################################
-        project = gl.projects.get(f"{GITLAB_OWNER}/{GITLAB_REPO_NAME}")
+        if args.large:
+            repo_name = GITLAB_LARGE_REPO_NAME
+        else:
+            repo_name = GITLAB_REPO_NAME
+
+        project = gl.projects.get(f"{GITLAB_OWNER}/{repo_name}")
 
         # Timestamp
         now = datetime.now(UTC)
@@ -123,7 +139,13 @@ def main():
         ns = now.microsecond * 1_000
         time_stamp = f"{now:%H:%M:%S}.{ns:09d}"
 
-        url = f"https://api.bitbucket.org/2.0/repositories/{WORKSPACE}/{REPO_SLUG}/pipelines/"
+        if args.large:
+            repo_slug = LARGE_REPO_SLUG
+            custom_pipeline_name = LARGE_CUSTOM_PIPELINE_NAME
+        else:
+            repo_slug = REPO_SLUG
+            custom_pipeline_name = CUSTOM_K8S_PIPELINE_NAME if args.self_hosted else CUSTOM_PIPELINE_NAME
+        url = f"https://api.bitbucket.org/2.0/repositories/{WORKSPACE}/{repo_slug}/pipelines/"
 
         payload = {
             "target": {
@@ -132,7 +154,7 @@ def main():
                 "ref_name": REF,
                 "selector": {
                     "type": "custom",
-                    "pattern": CUSTOM_K8S_PIPELINE_NAME if args.self_hosted else CUSTOM_PIPELINE_NAME,
+                    "pattern": custom_pipeline_name,
                 }
             },
             "variables": [
