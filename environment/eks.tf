@@ -82,15 +82,15 @@ module "eks" {
       # spot capacity
       capacity_type = "SPOT"
 
-      min_size     = 2
-      max_size     = 2
-      desired_size = 2
+      min_size     = 4
+      max_size     = 4
+      desired_size = 4
 
       block_device_mappings = {
         xvda = {
           device_name = "/dev/xvda"
           ebs = {
-            volume_size           = 40          # 40 GiB root disk
+            volume_size           = 100          # 100 GiB root disk
             volume_type           = "gp3"
             delete_on_termination = true
             encrypted             = true

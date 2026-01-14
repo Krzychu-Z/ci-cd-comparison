@@ -18,6 +18,7 @@ GITHUB_LARGE_REPO_NAME = "large-project"
 GITHUB_WORKFLOW_FILE = "simple.yml"
 GITHUB_SELF_HOSTED_WORKFLOW_FILE = "k8s.yml"
 GITHUB_LARGE_WORKFLOW_FILE = "manual-build.yml"
+GITHUB_SELF_HOSTED_LARGE_WORKFLOW_FILE = "manual-build-k8s.yml"
 
 # Gitlab vars
 GITLAB_TOKEN = os.environ["GITLAB_TOKEN"]
@@ -34,6 +35,7 @@ LARGE_REPO_SLUG = "large-project"
 CUSTOM_PIPELINE_NAME = "simple-performance"
 CUSTOM_K8S_PIPELINE_NAME = "simple-performance-k8s"
 LARGE_CUSTOM_PIPELINE_NAME = "rust-compiler-pipeline"
+LARGE_CUSTOM_K8S_PIPELINE_NAME = "k8s-rust-compiler-pipeline"
 
 REF = "master"
 
@@ -58,16 +60,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--self-hosted", action="store_true")
     parser.add_argument("-l", "--large", action="store_true")
+    parser.add_argument("-i", "--iterator", type=int, default=2)
     args = parser.parse_args()
 
 
-    for i in tqdm(range(2)):
+    for i in tqdm(range(args.iterator)):
         ###############################################
         # Github
         ###############################################
         if args.large:
             repo_name = GITHUB_LARGE_REPO_NAME
-            workflow_file = GITHUB_LARGE_WORKFLOW_FILE
+            workflow_file = GITHUB_SELF_HOSTED_LARGE_WORKFLOW_FILE if args.self_hosted else GITHUB_LARGE_WORKFLOW_FILE
         else:
             repo_name = GITHUB_REPO_NAME
             workflow_file = GITHUB_SELF_HOSTED_WORKFLOW_FILE if args.self_hosted else GITHUB_WORKFLOW_FILE
@@ -115,13 +118,22 @@ def main():
                 ],
             })
         else:
-            pipeline = project.pipelines.create({
-                "ref": REF,
-                "variables": [
-                    {"key": "PIPELINE_CALL_TS", "value": time_stamp},
-                    {"key": "PIPELINE_TYPE", "value": "simple-perf"}
-                ],
-            })
+            if args.large:
+                pipeline = project.pipelines.create({
+                    "ref": REF,
+                    "variables": [
+                        {"key": "PIPELINE_CALL_TS", "value": time_stamp},
+                        {"key": "PIPELINE_TYPE", "value": "rust-perf"}
+                    ],
+                })
+            else:
+                pipeline = project.pipelines.create({
+                    "ref": REF,
+                    "variables": [
+                        {"key": "PIPELINE_CALL_TS", "value": time_stamp},
+                        {"key": "PIPELINE_TYPE", "value": "simple-perf"}
+                    ],
+                })
 
         print(f"Dispatched Gitlab pipeline ({i}):", pipeline.id)
 
@@ -141,7 +153,7 @@ def main():
 
         if args.large:
             repo_slug = LARGE_REPO_SLUG
-            custom_pipeline_name = LARGE_CUSTOM_PIPELINE_NAME
+            custom_pipeline_name = LARGE_CUSTOM_K8S_PIPELINE_NAME if args.self_hosted else LARGE_CUSTOM_PIPELINE_NAME
         else:
             repo_slug = REPO_SLUG
             custom_pipeline_name = CUSTOM_K8S_PIPELINE_NAME if args.self_hosted else CUSTOM_PIPELINE_NAME
