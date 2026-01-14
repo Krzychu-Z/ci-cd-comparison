@@ -31,7 +31,6 @@ in a production environment.
 │   ├── s3.tf
 │   ├── terraform.tf
 │   └── variables.tf
-├── large-perf.py
 ├── LICENSE
 ├── organizations
 │   ├── bitbucket-org
@@ -53,7 +52,7 @@ in a production environment.
 │       └── variables.tf
 ├── README.md
 ├── requirements.txt
-└── simple-perf.py
+└── run.py
 ```
 
 ##  3. <a name='Deploymentinstructions'></a>Deployment instructions
