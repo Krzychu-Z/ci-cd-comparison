@@ -1,0 +1,37 @@
+# cd__simple__small-project.yml (GitLab)
+#
+# Continuous Deployment pipeline (multi-OS build and archive)
+
+build_binaries:
+  stage: cd
+  image: golang:1.22
+  parallel:
+    matrix:
+      - GOOS: linux
+        GOARCH: amd64
+        EXT: ""
+      - GOOS: windows
+        GOARCH: amd64
+        EXT: ".exe"
+      - GOOS: darwin
+        GOARCH: amd64
+        EXT: ""
+  script:
+    - echo "Building for ${GOOS}/${GOARCH} (ext=${EXT})"
+    - export GOOS="${GOOS}" 
+    - export GOARCH="${GOARCH}"
+    - export CGO_ENABLED=0
+    - go build -o "modbusCRC16${EXT}" ./src/modbusCRC16.go
+    - mkdir -p dist
+    - cp "modbusCRC16${EXT}" dist/
+    - cd dist
+    - tar -czf "modbusCRC16-${GOOS}-${GOARCH}.tar.gz" "modbusCRC16${EXT}"
+  artifacts:
+    paths:
+      - dist/modbusCRC16-${GOOS}-${GOARCH}.tar.gz
+    expire_in: 1 week
+  needs:
+    - ci_tests
+    - ct_tests
+  tags:
+    - k8s

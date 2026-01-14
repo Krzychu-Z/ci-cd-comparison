@@ -1,0 +1,67 @@
+# ci__simple__small-project.yml (GitLab)
+#
+# Continuous Integration pipeline (static analysis + tests + timings)
+
+static_analysis:
+  stage: ci
+  image: ghcr.io/super-linter/super-linter:v8.2.1
+  variables:
+    VALIDATE_ALL_CODEBASE: "false"
+    VALIDATE_GO: "true"
+    VALIDATE_GITHUB_ACTIONS: "true"
+    VALIDATE_MARKDOWN: "true"
+    VALIDATE_YAML: "true"
+    RUN_LOCAL: "true"
+    GITHUB_WORKSPACE: "$CI_PROJECT_DIR"
+  script:
+    - bash /action/lib/linter.sh
+  needs:
+    - start_time
+  tags:
+    - k8s
+
+ci_tests:
+  stage: ci
+  image: golang:1.22
+  script:
+    - go test -v ./src/...
+    - echo "CI_START_TIME=$(date +%T.%N)" > ci_times.env
+    - go build -o modbusCRC16 ./src/modbusCRC16.go
+    - chmod +x ./modbusCRC16
+    - ./modbusCRC16 011000110003061AC4BAD0 1 > out.txt
+    - grep "0x677F" out.txt
+    - echo "CI_STOP_TIME=$(date +%T.%N)" >> ci_times.env
+  artifacts:
+    reports:
+      dotenv: ci_times.env
+    paths:
+      - modbusCRC16
+      - out.txt
+    expire_in: 1 week
+  needs:
+    - start_time
+  tags:
+    - k8s
+
+ct_tests:
+  stage: ci
+  image: golang:1.22
+  timeout: 60m
+  variables:
+     RUNNER_SCRIPT_TIMEOUT: 60m  
+  script:
+    - echo "CT_START_TIME=$(date +%T.%N)" > ct_times.env
+    - CGO_ENABLED=0 go build -o modbusCRC16 ./src/modbusCRC16.go
+    - chmod +x ./modbusCRC16
+    - ./modbusCRC16 011000110003061AC4BAD0 10000000000
+    - echo "CT_STOP_TIME=$(date +%T.%N)" >> ct_times.env
+  artifacts:
+    reports:
+      dotenv: ct_times.env
+    paths:
+      - modbusCRC16
+    expire_in: 1 week
+  needs:
+    - start_time
+  tags:
+    - k8s

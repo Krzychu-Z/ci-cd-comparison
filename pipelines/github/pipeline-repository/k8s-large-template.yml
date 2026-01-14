@@ -1,0 +1,135 @@
+---
+name: Rust compiler pipeline - self-hosted version
+
+on:
+  workflow_call:
+    inputs:
+      pipeline-call-ts:
+        description: "Time of the pipeline call."
+        required: true
+        type: string
+    secrets:
+      aws-access-key-id:
+        description: "AWS Access Key ID for S3 upload."
+        required: true
+      aws-secret-access-key:
+        description: "AWS Secret Access Key for S3 upload."
+        required: true
+      aws-region:
+        description: "AWS Region for S3 upload."
+        required: true
+      s3-bucket-name:
+        description: "S3 Bucket name for performance JSON upload."  
+        required: true
+
+jobs:
+  start-time:
+    name: Capture Start Time
+    runs-on: masters-thesis-arc-runner-set
+    outputs:
+      start-time: ${{ steps.set-start-time.outputs.start-time }}
+    steps:
+    - name: Set start time
+      id: set-start-time
+      run: echo "::set-output name=start-time::$(date +%T.%N)"
+  rust:
+    name: Build Large Project
+    needs: start-time
+    uses: ./.github/workflows/k8s__large-project.yml
+  stop-time:
+    name: Capture Stop Time
+    needs: rust
+    runs-on: masters-thesis-arc-runner-set
+    outputs:
+      stop-time: ${{ steps.set-stop-time.outputs.stop-time }}
+    steps:
+    - name: Set stop time
+      id: set-stop-time
+      run: echo "::set-output name=stop-time::$(date +%T.%N)"
+  generate-report:
+    name: Generate Performance Report
+    needs: [start-time, rust, stop-time]
+    runs-on: masters-thesis-arc-runner-set
+    env:
+      S3_PREFIX: glue/performance-metrics
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region:            ${{ secrets.aws-region }}
+
+      - name: Build and upload performance JSON record
+        run: |
+          # Overall pipeline start/stop times
+          PIPELINE_START="${{ needs.start-time.outputs.start-time }}"
+          PIPELINE_STOP="${{ needs.stop-time.outputs.stop-time }}"
+
+          # Pipeline duration calculation
+          START_EPOCH=$(date -d "$(date +%F) $PIPELINE_START" +%s%N)
+          STOP_EPOCH=$(date -d "$(date +%F) $PIPELINE_STOP" +%s%N)
+          PIPELINE_DIFF=$((STOP_EPOCH - START_EPOCH))
+          DURATION_SEC=$(awk -v d="$PIPELINE_DIFF" 'BEGIN { printf "%.5f", d/1e9 }')
+
+          # Pipeline run metadata
+          RUN_DATE=$(date -u +%Y-%m-%d)
+          RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "RUN_DATE=$RUN_DATE" >> "$GITHUB_ENV"
+
+          # Rust compiler build job start/stop times
+          RUST_START_TIME="${{ needs.rust.outputs.build-start-time }}"
+          RUST_STOP_TIME="${{ needs.rust.outputs.build-stop-time }}"
+
+          # Rust compiler build job duration calculation
+          RUST_START_EPOCH=$(date -d "$(date +%F) $RUST_START_TIME" +%s%N)
+          RUST_STOP_EPOCH=$(date -d "$(date +%F) $RUST_STOP_TIME" +%s%N)
+          RUST_DURATION_DIFF=$((RUST_STOP_EPOCH - RUST_START_EPOCH))
+          RUST_DURATION_SEC=$(awk -v d="$RUST_DURATION_DIFF" 'BEGIN { printf "%.5f", d/1e9 }')
+
+          # Rust program runtime test start/stop times
+          RUNTIME_START_TIME="${{ needs.rust.outputs.runtime-start-time }}"
+          RUNTIME_STOP_TIME="${{ needs.rust.outputs.runtime-stop-time }}"
+
+          # Runtime test duration calculation
+          RUNTIME_START_EPOCH=$(date -d "$(date +%F) $RUNTIME_START_TIME" +%s%N)
+          RUNTIME_STOP_EPOCH=$(date -d "$(date +%F) $RUNTIME_STOP_TIME" +%s%N)
+          RUNTIME_DURATION_DIFF=$((RUNTIME_STOP_EPOCH - RUNTIME_START_EPOCH))
+          RUNTIME_DURATION_SEC=$(awk -v d="$RUNTIME_DURATION_DIFF" 'BEGIN { printf "%.5f", d/1e9 }')
+
+          # Build JSON line record
+          WORKDIR="$PWD"
+          cat <<EOF | jq -c . > performance.jsonl
+          {
+            "run_id":"${{ github.run_id }}",
+            "pipeline_call_time":"${{ inputs.pipeline-call-ts }}",
+            "pipeline_start_time":"$PIPELINE_START",
+            "pipeline_stop_time":"$PIPELINE_STOP",
+            "pipeline_duration":$DURATION_SEC,
+            "rust_start_time":"$RUST_START_TIME",
+            "rust_stop_time":"$RUST_STOP_TIME",
+            "rust_duration":$RUST_DURATION_SEC,
+            "runtime_start_time":"$RUNTIME_START_TIME",
+            "runtime_stop_time":"$RUNTIME_STOP_TIME",
+            "runtime_duration":$RUNTIME_DURATION_SEC
+          }
+          EOF
+
+          FILE_NAME="github-self-hosted-${{ github.workflow }}-${{ github.run_id }}.jsonl"
+
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y unzip curl
+          elif command -v yum >/dev/null 2>&1; then
+            sudo yum install -y unzip curl
+          fi
+
+          tmpdir="$(mktemp -d)"
+          cd "$tmpdir"
+          curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+          aws s3 cp $WORKDIR/performance.jsonl \
+            "s3://${{ secrets.s3-bucket-name }}/${S3_PREFIX}/run_date=${RUN_DATE}/${FILE_NAME}"
+    

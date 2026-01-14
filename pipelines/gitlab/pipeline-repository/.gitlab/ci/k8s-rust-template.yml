@@ -1,0 +1,114 @@
+include:
+  - local: '.gitlab/ci/k8s/large/rust-build.yml'
+
+stages:
+  - metrics_start
+  - rust
+  - metrics_stop
+  - metrics_report
+
+variables:
+  S3_PREFIX: "glue/performance-metrics"
+
+# --- start-time: Capture Start Time ---
+start_time:
+  stage: metrics_start
+  image: ubuntu:22.04
+  variables:
+    GIT_STRATEGY: none
+  before_script: []
+  script:
+    - 'echo "PIPELINE_START_TIME=$(date +%T.%N)" > rust_pipeline_start.env'
+  artifacts:
+    reports:
+      dotenv: rust_pipeline_start.env
+  tags:
+    - k8s
+
+# --- stop-time: Capture Stop Time ---
+stop_time:
+  stage: metrics_stop
+  image: ubuntu:22.04
+  needs:
+    - rust
+  script:
+    - 'echo "PIPELINE_STOP_TIME=$(date +%T.%N)" > rust_pipeline_stop.env'
+  artifacts:
+    reports:
+      dotenv: rust_pipeline_stop.env
+  tags:
+    - k8s
+
+# --- generate-report: Build JSON and upload to S3 ---
+generate_report:
+  stage: metrics_report
+  image: ubuntu:22.04
+  needs:
+    - start_time
+    - rust
+    - stop_time
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends jq awscli coreutils
+    - ': "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"'
+    - ': "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"'
+    - ': "${AWS_REGION:?AWS_REGION is required}"'
+    - ': "${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}"'
+    - ': "${PIPELINE_CALL_TS:?PIPELINE_CALL_TS is required}"'
+  script:
+    - |
+      # Overall pipeline start/stop
+      PIPELINE_START="${PIPELINE_START_TIME}"
+      PIPELINE_STOP="${PIPELINE_STOP_TIME}"
+
+      START_EPOCH=$(date -d "$(date +%F) ${PIPELINE_START}" +%s%N)
+      STOP_EPOCH=$(date -d "$(date +%F) ${PIPELINE_STOP}" +%s%N)
+      PIPELINE_DIFF=$((STOP_EPOCH - START_EPOCH))
+      PIPELINE_DURATION_SEC=$(awk -v d="${PIPELINE_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # Run metadata
+      RUN_DATE=$(date -u +%Y-%m-%d)
+      RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      export RUN_DATE
+
+      # Rust compiler build times (from build_rustc dotenv)
+      RUST_START_TIME="${BUILD_START_TIME}"
+      RUST_STOP_TIME="${BUILD_STOP_TIME}"
+
+      RUST_START_EPOCH=$(date -d "$(date +%F) ${RUST_START_TIME}" +%s%N)
+      RUST_STOP_EPOCH=$(date -d "$(date +%F) ${RUST_STOP_TIME}" +%s%N)
+      RUST_DURATION_DIFF=$((RUST_STOP_EPOCH - RUST_START_EPOCH))
+      RUST_DURATION_SEC=$(awk -v d="${RUST_DURATION_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # Runtime test times
+      RUNTIME_START_TIME="${RUNTIME_START_TIME}"
+      RUNTIME_STOP_TIME="${RUNTIME_STOP_TIME}"
+
+      RUNTIME_START_EPOCH=$(date -d "$(date +%F) ${RUNTIME_START_TIME}" +%s%N)
+      RUNTIME_STOP_EPOCH=$(date -d "$(date +%F) ${RUNTIME_STOP_TIME}" +%s%N)
+      RUNTIME_DURATION_DIFF=$((RUNTIME_STOP_EPOCH - RUNTIME_START_EPOCH))
+      RUNTIME_DURATION_SEC=$(awk -v d="${RUNTIME_DURATION_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # Build JSONL record
+      cat <<EOF | jq -c . > performance.jsonl
+      {
+        "run_id": "${CI_PIPELINE_ID}",
+        "pipeline_call_time": "${PIPELINE_CALL_TS}",
+        "pipeline_start_time": "${PIPELINE_START}",
+        "pipeline_stop_time": "${PIPELINE_STOP}",
+        "pipeline_duration": ${PIPELINE_DURATION_SEC},
+        "rust_start_time": "${RUST_START_TIME}",
+        "rust_stop_time": "${RUST_STOP_TIME}",
+        "rust_duration": ${RUST_DURATION_SEC},
+        "runtime_start_time": "${RUNTIME_START_TIME}",
+        "runtime_stop_time": "${RUNTIME_STOP_TIME}",
+        "runtime_duration": ${RUNTIME_DURATION_SEC}
+      }
+      EOF
+
+      FILE_NAME="gitlab-self-hosted-${CI_PROJECT_NAME}-${CI_PIPELINE_ID}.jsonl"
+
+      aws s3 cp performance.jsonl \
+        "s3://${S3_BUCKET_NAME}/${S3_PREFIX}/run_date=${RUN_DATE}/${FILE_NAME}"
+  tags:
+    - k8s

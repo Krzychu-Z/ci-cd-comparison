@@ -1,0 +1,101 @@
+rust:
+  stage: rust
+  image: ubuntu:22.04
+  variables:
+    RUST_DIR: "$CI_BUILDS_DIR/rust"
+  script:
+    # 1) Set build start time (equivalent of set-start-time step)
+    - set -euo pipefail
+    - echo "BUILD_START_TIME=$(date +%T.%N)" > rust_build_times.env
+
+    # 2) Checkout this repo (already done by GitLab, but keep a no-op to mirror behaviour)
+    - echo "Using repo at $CI_PROJECT_DIR"
+
+    # 3) Install build dependencies
+    - |
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive \
+      apt-get install -y \
+        python3 \
+        curl \
+        git \
+        build-essential \
+        pkg-config \
+        libssl-dev \
+        cmake \
+        ninja-build \
+        clang
+
+    # 4) Clone rust-lang/rust
+    - |
+      mkdir -p "$RUST_DIR"
+      git clone https://github.com/rust-lang/rust.git "$RUST_DIR"
+
+    # 5) Configure Rust bootstrap
+    - |
+      cd "$RUST_DIR"
+      pwd
+      ./configure --set llvm.download-ci-llvm=true
+
+    # 6) Build rustc (stage1 compiler + std)
+    - |
+      cd "$RUST_DIR"
+      export RUST_BACKTRACE=1
+      set -euo pipefail
+      ./x.py build library
+
+    # 7) Measure build time (stop)
+    - |
+      cd "$CI_PROJECT_DIR"
+      echo "BUILD_STOP_TIME=$(date +%T.%N)" >> rust_build_times.env
+
+    # 8) Locate built rustc
+    - |
+      cd "$RUST_DIR"
+      set -euo pipefail
+      RUSTC_PATH="$(find build -path '*stage1/bin/rustc' -print -quit)"
+      if [ -z "$RUSTC_PATH" ]; then
+        echo "rustc not found in build directory" >&2
+        ls -R build || true
+        exit 1
+      fi
+      echo "Using rustc at: $RUSTC_PATH"
+      echo "RUSTC_PATH=$RUSTC_PATH" >> rust_build_times.env
+
+    # 9) Set compile and run start time
+    - |
+      cd "$CI_PROJECT_DIR"
+      echo "RUNTIME_START_TIME=$(date +%T.%N)" >> rust_build_times.env
+
+    # 10) Compile and run test program with built rustc
+    - |
+      cd "$RUST_DIR"
+      set -euo pipefail
+      RUSTC="$RUSTC_PATH"
+
+      cat > hello.rs << 'EOF'
+      fn main() {
+          println!("hello from built rustc");
+      }
+      EOF
+
+      "$RUSTC" hello.rs -o hello
+
+      OUTPUT="$(./hello)"
+      echo "Program output: '$OUTPUT'"
+      if [ "$OUTPUT" != "hello from built rustc" ]; then
+        echo "Unexpected program output" >&2
+        exit 1
+      fi
+
+    # 11) Set compile and run stop time
+    - |
+      cd "$CI_PROJECT_DIR"
+      echo "RUNTIME_STOP_TIME=$(date +%T.%N)" >> rust_build_times.env
+
+  artifacts:
+    reports:
+      dotenv: rust_build_times.env
+    paths:
+      - rust_build_times.env
+    expire_in: 1 week

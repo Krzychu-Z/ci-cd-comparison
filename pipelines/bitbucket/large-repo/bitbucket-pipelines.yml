@@ -1,0 +1,268 @@
+image: ubuntu:22.04
+
+pipelines:
+  custom:
+    rust-compiler-pipeline:
+      - variables:
+        - name: PIPELINE_CALL_TS
+      - step:
+          name: Build Rust compiler and upload metrics
+          caches:
+            - rust-build
+          script:
+            # 1) Overall pipeline start time (first effective command)
+            - PIPELINE_START_TIME="$(date +%T.%N)"
+
+            # 2) Install dependencies
+            - set -euo pipefail
+            - export DEBIAN_FRONTEND=noninteractive
+            - apt-get update
+            - apt-get install -y python3 curl git build-essential pkg-config libssl-dev cmake ninja-build clang jq awscli coreutils
+
+            # 3) Define RUST_DIR similar to github.workspace/../rust
+            - export RUST_DIR="$BITBUCKET_CLONE_DIR/../rust"
+
+            # 4) Record build start time
+            - BUILD_START_TIME="$(date +%T.%N)"
+
+            # 5) Clone rust-lang/rust
+            - git clone https://github.com/rust-lang/rust.git "$RUST_DIR"
+
+            # 6) Configure Rust bootstrap
+            - |
+              cd "$RUST_DIR"
+              ./configure --set llvm.download-ci-llvm=true
+
+            # 7) Build rustc (stage1 compiler + std)
+            - |
+              cd "$RUST_DIR"
+              export RUST_BACKTRACE=1
+              set -euo pipefail
+              ./x.py build library
+
+            # 8) Record build stop time
+            - BUILD_STOP_TIME="$(date +%T.%N)"
+
+            # 9) Locate built rustc
+            - |
+              cd "$RUST_DIR"
+              set -euo pipefail
+              RUSTC_PATH="$(find build -path '*stage1/bin/rustc' -print -quit)"
+              if [ -z "$RUSTC_PATH" ]; then
+                echo "rustc not found in build directory" >&2
+                ls -R build || true
+                exit 1
+              fi
+              echo "Using rustc at: $RUSTC_PATH"
+
+            # 10) Record runtime start time
+            - RUNTIME_START_TIME="$(date +%T.%N)"
+
+            # 11) Compile and run test program with built rustc
+            - |
+              cd "$RUST_DIR"
+              set -euo pipefail
+              RUSTC="$RUSTC_PATH"
+
+              cat > hello.rs << 'EOF'
+              fn main() {
+                  println!("hello from built rustc");
+              }
+              EOF
+
+              "$RUSTC" hello.rs -o hello
+
+              OUTPUT="$(./hello)"
+              echo "Program output: '$OUTPUT'"
+              if [ "$OUTPUT" != "hello from built rustc" ]; then
+                echo "Unexpected program output" >&2
+                exit 1
+              fi
+
+            # 12) Record runtime stop time
+            - RUNTIME_STOP_TIME="$(date +%T.%N)"
+
+            # 13) Overall pipeline stop time
+            - PIPELINE_STOP_TIME="$(date +%T.%N)"
+
+            # 14) Compute durations (pipeline, build, runtime) and write JSONL
+            - |
+              # Overall pipeline duration
+              START_EPOCH=$(date -d "$(date +%F) ${PIPELINE_START_TIME}" +%s%N)
+              STOP_EPOCH=$(date -d "$(date +%F) ${PIPELINE_STOP_TIME}" +%s%N)
+              PIPELINE_DIFF=$((STOP_EPOCH - START_EPOCH))
+              PIPELINE_DURATION_SEC=$(awk -v d="${PIPELINE_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Build duration
+              BUILD_START_EPOCH=$(date -d "$(date +%F) ${BUILD_START_TIME}" +%s%N)
+              BUILD_STOP_EPOCH=$(date -d "$(date +%F) ${BUILD_STOP_TIME}" +%s%N)
+              BUILD_DIFF=$((BUILD_STOP_EPOCH - BUILD_START_EPOCH))
+              BUILD_DURATION_SEC=$(awk -v d="${BUILD_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Runtime duration
+              RUNTIME_START_EPOCH=$(date -d "$(date +%F) ${RUNTIME_START_TIME}" +%s%N)
+              RUNTIME_STOP_EPOCH=$(date -d "$(date +%F) ${RUNTIME_STOP_TIME}" +%s%N)
+              RUNTIME_DIFF=$((RUNTIME_STOP_EPOCH - RUNTIME_START_EPOCH))
+              RUNTIME_DURATION_SEC=$(awk -v d="${RUNTIME_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Metadata
+              RUN_DATE=$(date -u +%Y-%m-%d)
+              RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+              # Build JSONL record
+              cat <<EOF | jq -c . > performance.jsonl
+              {
+                "run_id": "${BITBUCKET_BUILD_NUMBER}",
+                "pipeline_call_time": "${PIPELINE_CALL_TS}",
+                "pipeline_start_time": "${PIPELINE_START_TIME}",
+                "pipeline_stop_time": "${PIPELINE_STOP_TIME}",
+                "pipeline_duration": ${PIPELINE_DURATION_SEC},
+                "rust_start_time": "${BUILD_START_TIME}",
+                "rust_stop_time": "${BUILD_STOP_TIME}",
+                "rust_duration": ${BUILD_DURATION_SEC},
+                "runtime_start_time": "${RUNTIME_START_TIME}",
+                "runtime_stop_time": "${RUNTIME_STOP_TIME}",
+                "runtime_duration": ${RUNTIME_DURATION_SEC}
+              }
+              EOF
+
+            # 15) Upload to S3
+            - |
+              FILE_NAME="bitbucket-rust-compiler-${BITBUCKET_BUILD_NUMBER}.jsonl"
+              aws s3 cp performance.jsonl \
+                "s3://${S3_BUCKET_NAME}/glue/performance-metrics/run_date=${RUN_DATE}/${FILE_NAME}"
+    k8s-rust-compiler-pipeline:
+      - variables:
+        - name: PIPELINE_CALL_TS
+      - step:
+          name: Build Rust compiler and upload metrics
+          caches:
+            - rust-build
+          script:
+            # 1) Overall pipeline start time (first effective command)
+            - PIPELINE_START_TIME="$(date +%T.%N)"
+
+            # 2) Install dependencies
+            - set -euo pipefail
+            - export DEBIAN_FRONTEND=noninteractive
+            - apt-get update
+            - apt-get install -y python3 curl git build-essential pkg-config libssl-dev cmake ninja-build clang jq awscli coreutils
+
+            # 3) Define RUST_DIR similar to github.workspace/../rust
+            - export RUST_DIR="$BITBUCKET_CLONE_DIR/../rust"
+
+            # 4) Record build start time
+            - BUILD_START_TIME="$(date +%T.%N)"
+
+            # 5) Clone rust-lang/rust
+            - git clone https://github.com/rust-lang/rust.git "$RUST_DIR"
+
+            # 6) Configure Rust bootstrap
+            - |
+              cd "$RUST_DIR"
+              ./configure --set llvm.download-ci-llvm=true
+
+            # 7) Build rustc (stage1 compiler + std)
+            - |
+              cd "$RUST_DIR"
+              export RUST_BACKTRACE=1
+              set -euo pipefail
+              ./x.py build library
+
+            # 8) Record build stop time
+            - BUILD_STOP_TIME="$(date +%T.%N)"
+
+            # 9) Locate built rustc
+            - |
+              cd "$RUST_DIR"
+              set -euo pipefail
+              RUSTC_PATH="$(find build -path '*stage1/bin/rustc' -print -quit)"
+              if [ -z "$RUSTC_PATH" ]; then
+                echo "rustc not found in build directory" >&2
+                ls -R build || true
+                exit 1
+              fi
+              echo "Using rustc at: $RUSTC_PATH"
+
+            # 10) Record runtime start time
+            - RUNTIME_START_TIME="$(date +%T.%N)"
+
+            # 11) Compile and run test program with built rustc
+            - |
+              cd "$RUST_DIR"
+              set -euo pipefail
+              RUSTC="$RUSTC_PATH"
+
+              cat > hello.rs << 'EOF'
+              fn main() {
+                  println!("hello from built rustc");
+              }
+              EOF
+
+              "$RUSTC" hello.rs -o hello
+
+              OUTPUT="$(./hello)"
+              echo "Program output: '$OUTPUT'"
+              if [ "$OUTPUT" != "hello from built rustc" ]; then
+                echo "Unexpected program output" >&2
+                exit 1
+              fi
+
+            # 12) Record runtime stop time
+            - RUNTIME_STOP_TIME="$(date +%T.%N)"
+
+            # 13) Overall pipeline stop time
+            - PIPELINE_STOP_TIME="$(date +%T.%N)"
+
+            # 14) Compute durations (pipeline, build, runtime) and write JSONL
+            - |
+              # Overall pipeline duration
+              START_EPOCH=$(date -d "$(date +%F) ${PIPELINE_START_TIME}" +%s%N)
+              STOP_EPOCH=$(date -d "$(date +%F) ${PIPELINE_STOP_TIME}" +%s%N)
+              PIPELINE_DIFF=$((STOP_EPOCH - START_EPOCH))
+              PIPELINE_DURATION_SEC=$(awk -v d="${PIPELINE_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Build duration
+              BUILD_START_EPOCH=$(date -d "$(date +%F) ${BUILD_START_TIME}" +%s%N)
+              BUILD_STOP_EPOCH=$(date -d "$(date +%F) ${BUILD_STOP_TIME}" +%s%N)
+              BUILD_DIFF=$((BUILD_STOP_EPOCH - BUILD_START_EPOCH))
+              BUILD_DURATION_SEC=$(awk -v d="${BUILD_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Runtime duration
+              RUNTIME_START_EPOCH=$(date -d "$(date +%F) ${RUNTIME_START_TIME}" +%s%N)
+              RUNTIME_STOP_EPOCH=$(date -d "$(date +%F) ${RUNTIME_STOP_TIME}" +%s%N)
+              RUNTIME_DIFF=$((RUNTIME_STOP_EPOCH - RUNTIME_START_EPOCH))
+              RUNTIME_DURATION_SEC=$(awk -v d="${RUNTIME_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+              # Metadata
+              RUN_DATE=$(date -u +%Y-%m-%d)
+              RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+              # Build JSONL record
+              cat <<EOF | jq -c . > performance.jsonl
+              {
+                "run_id": "${BITBUCKET_BUILD_NUMBER}",
+                "pipeline_call_time": "${PIPELINE_CALL_TS}",
+                "pipeline_start_time": "${PIPELINE_START_TIME}",
+                "pipeline_stop_time": "${PIPELINE_STOP_TIME}",
+                "pipeline_duration": ${PIPELINE_DURATION_SEC},
+                "rust_start_time": "${BUILD_START_TIME}",
+                "rust_stop_time": "${BUILD_STOP_TIME}",
+                "rust_duration": ${BUILD_DURATION_SEC},
+                "runtime_start_time": "${RUNTIME_START_TIME}",
+                "runtime_stop_time": "${RUNTIME_STOP_TIME}",
+                "runtime_duration": ${RUNTIME_DURATION_SEC}
+              }
+              EOF
+
+            # 15) Upload to S3
+            - |
+              FILE_NAME="bitbucket-k8s-rust-compiler-${BITBUCKET_BUILD_NUMBER}.jsonl"
+              aws s3 cp performance.jsonl \
+                "s3://${S3_BUCKET_NAME}/glue/performance-metrics/run_date=${RUN_DATE}/${FILE_NAME}"
+          runs-on:
+            - self.hosted
+
+definitions:
+  caches:
+    rust-build: ~/.cache

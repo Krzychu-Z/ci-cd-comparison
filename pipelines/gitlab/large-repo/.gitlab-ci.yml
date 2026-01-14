@@ -1,0 +1,30 @@
+variables:
+  PIPELINE_CALL_TS: ""
+
+stages: [triggers]
+
+rust_perf:
+  stage: triggers
+  trigger:
+    include:
+    - project: 'masters-thesis-group/pipelines-repository'
+      ref: master
+      file: '.gitlab/ci/rust-template.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true 
+  rules:
+    - if: '$PIPELINE_TYPE == "rust-perf"'
+
+k8s_perf:
+  stage: triggers
+  trigger:
+    include:
+    - project: 'masters-thesis-group/pipelines-repository'
+      ref: master
+      file: '.gitlab/ci/k8s-rust-template.yml'
+    strategy: depend
+    forward:
+      pipeline_variables: true 
+  rules:
+    - if: '$PIPELINE_TYPE == "k8s-perf"'

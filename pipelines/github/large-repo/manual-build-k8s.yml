@@ -1,0 +1,21 @@
+---
+name: rust-pipeline-large-project
+on:
+  workflow_dispatch:
+    inputs:
+      pipeline-call-ts:
+        description: 'Timestamp of the pipeline call.'
+        required: true
+  
+
+jobs:
+  call-workflow:
+    name: Call simple performance CI/CD pipeline
+    uses: masters-thesis-org/pipelines-repository/.github/workflows/k8s-large-template.yml@main
+    with:
+      pipeline-call-ts: ${{ inputs.pipeline-call-ts }}
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.AWS_REGION }}
+      s3-bucket-name: ${{ secrets.S3_BUCKET_NAME }}

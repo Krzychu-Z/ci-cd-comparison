@@ -1,0 +1,119 @@
+name: Build Rust compiler from source
+
+on:
+  workflow_call:
+    outputs:
+      build-start-time:
+        description: "The start time of the build."
+        value: ${{ jobs.build-rustc.outputs.build-start-time }}
+      build-stop-time:
+        description: "The stop time of the build."
+        value: ${{ jobs.build-rustc.outputs.build-stop-time }}
+      runtime-start-time:
+        description: "The start time of the runtime test."
+        value: ${{ jobs.build-rustc.outputs.runtime-start-time }}
+      runtime-stop-time:
+        description: "The stop time of the runtime test."
+        value: ${{ jobs.build-rustc.outputs.runtime-stop-time }}
+
+jobs:
+  build-rustc:
+    runs-on: ubuntu-latest
+    outputs:
+      build-start-time: ${{ steps.set-start-time.outputs.start-time }}
+      build-stop-time: ${{ steps.measure-stop-time.outputs.measure-stop-time }}
+      runtime-start-time: ${{ steps.set-runtime-start-time.outputs.runtime-start-time }}
+      runtime-stop-time: ${{ steps.set-runtime-stop-time.outputs.runtime-stop-time }}
+    env:
+      RUST_DIR: ${{ github.workspace }}/../rust
+    steps:
+      - name: Set start time
+        id: set-start-time
+        run: echo "::set-output name=start-time::$(date +%T.%N)"
+
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 \
+            curl \
+            git \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            cmake \
+            ninja-build \
+            clang
+
+      - name: Clone rust-lang/rust
+        run: |
+          git clone https://github.com/rust-lang/rust.git "$RUST_DIR"
+
+      - name: Configure Rust bootstrap
+        working-directory: ${{ env.RUST_DIR }}
+        run: |
+          ./configure --set llvm.download-ci-llvm=true
+
+      - name: Build rustc (stage1 compiler + std)
+        working-directory: ${{ env.RUST_DIR }}
+        env:
+          RUST_BACKTRACE: 1
+        run: |
+          # This builds rustc, std and rustdoc using the stage1 compiler :contentReference[oaicite:0]{index=0}
+          set -euo pipefail
+          ./x.py build library
+      
+      - name: Measure build time (stop)
+        id: measure-stop-time
+        run: echo "::set-output name=measure-stop-time::$(date +%T.%N)"
+
+      - name: Locate built rustc
+        id: rustc-path
+        working-directory: ${{ env.RUST_DIR }}
+        run: |
+          set -euo pipefail
+          RUSTC_PATH="$(find build -path '*stage1/bin/rustc' -print -quit)"
+          if [ -z "$RUSTC_PATH" ]; then
+            echo "rustc not found in build directory" >&2
+            ls -R build || true
+            exit 1
+          fi
+          echo "Using rustc at: $RUSTC_PATH"
+          echo "rustc_path=$RUSTC_PATH" >> "$GITHUB_OUTPUT"
+      
+      - name: Set compile and run start time
+        id: set-runtime-start-time
+        run: echo "::set-output name=runtime-start-time::$(date +%T.%N)"
+
+      - name: Compile and run test program with built rustc
+        working-directory: ${{ env.RUST_DIR }}
+        run: |
+          set -euo pipefail
+          RUSTC="${{ steps.rustc-path.outputs.rustc_path }}"
+
+          # Write a simple Rust program
+          cat > hello.rs << 'EOF'
+          fn main() {
+              println!("hello from built rustc");
+          }
+          EOF
+
+          # Compile with the newly built compiler
+          "$RUSTC" hello.rs -o hello
+
+          # Run it and assert output
+          OUTPUT="$(./hello)"
+          echo "Program output: '$OUTPUT'"
+          if [ "$OUTPUT" != "hello from built rustc" ]; then
+            echo "Unexpected program output" >&2
+            exit 1
+          fi
+      
+      - name: Set compile and run stop time
+        id: set-runtime-stop-time
+        run: echo "::set-output name=runtime-stop-time::$(date +%T.%N)"

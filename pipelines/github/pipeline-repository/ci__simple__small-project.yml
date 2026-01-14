@@ -1,0 +1,105 @@
+---
+name: Continuous Integration Pipeline
+
+on:
+  workflow_call:
+    outputs:
+      ci-start-time:
+        description: "The start time of the CI build."
+        value: ${{ jobs.ci-tests.outputs.measure-start-time }}
+      ci-stop-time:
+        description: "The stop time of the CI build."
+        value: ${{ jobs.ci-tests.outputs.measure-stop-time }}
+      long-start-time:
+        description: "The start time of the long CT build."
+        value: ${{ jobs.ct-tests.outputs.long-measure-start-time }}
+      long-stop-time:
+        description: "The stop time of the long CT build."
+        value: ${{ jobs.ct-tests.outputs.long-measure-stop-time }}
+
+jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Code linting
+        uses: super-linter/super-linter@v8.2.1
+        env:
+          VALIDATE_ALL_CODEBASE: false
+          VALIDATE_GO: true
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_MARKDOWN: true
+          VALIDATE_YAML: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  ci-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      measure-start-time: ${{ steps.measure-start-time.outputs.measure-start-time }}
+      measure-stop-time: ${{ steps.measure-stop-time.outputs.measure-stop-time }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      
+      - name: Run unit tests
+        run: go test -v ./src/...
+      
+      - name: Measure build time (start)
+        id: measure-start-time
+        run: echo "::set-output name=measure-start-time::$(date +%T.%N)"
+      
+      - name: Build binary
+        run: go build -o modbusCRC16 ./src/modbusCRC16.go
+      
+      - name: Simple functional test (CRC check)
+        run: |
+          chmod +x ./modbusCRC16
+          ./modbusCRC16 011000110003061AC4BAD0 1 > out.txt
+          grep "0x677F" out.txt
+      
+      - name: Measure build time (stop)
+        id: measure-stop-time
+        run: echo "::set-output name=measure-stop-time::$(date +%T.%N)"
+  ct-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      long-measure-start-time: ${{ steps.measure-long-start-time.outputs.measure-long-start-time }}
+      long-measure-stop-time: ${{ steps.measure-long-stop-time.outputs.measure-long-stop-time }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Measure long build time (start)
+        id: measure-long-start-time
+        run: echo "::set-output name=measure-long-start-time::$(date +%T.%N)"
+
+      - name: Build binary (optimized)
+        env:
+          CGO_ENABLED: 0
+        run: go build -o modbusCRC16 ./src/modbusCRC16.go
+
+      - name: Run performance test (10B iterations)
+        run: |
+          chmod +x ./modbusCRC16
+          ./modbusCRC16 011000110003061AC4BAD0 10000000000
+      
+      - name: Measure long build time (stop)
+        id: measure-long-stop-time
+        run: echo "::set-output name=measure-long-stop-time::$(date +%T.%N)"

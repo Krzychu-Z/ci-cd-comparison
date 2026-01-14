@@ -1,0 +1,121 @@
+# simple-template.yml (GitLab)
+#
+# Simple performance pipeline – orchestrator
+
+include:
+  - local: '.gitlab/ci/k8s/ci/small-project.yml'
+  - local: '.gitlab/ci/k8s/cd/small-project.yml'
+
+stages:
+  - metrics_start
+  - ci
+  - cd
+  - metrics_stop
+  - metrics_report
+
+variables:
+  S3_PREFIX: "glue/performance-metrics"
+
+# --- start-time: Capture Start Time (must be first effective command) ---
+start_time:
+  stage: metrics_start
+  image: ubuntu:22.04
+  variables:
+    GIT_STRATEGY: none
+  before_script: []           
+  script:
+    - 'echo "PIPELINE_START_TIME=$(date +%T.%N)" > pipeline_times_start.env'
+  artifacts:
+    reports:
+      dotenv: pipeline_times_start.env
+  tags:
+    - k8s
+
+# --- stop-time: Capture Stop Time ---
+stop_time:
+  stage: metrics_stop
+  image: ubuntu:22.04
+  needs:
+    - build_binaries
+  script:
+    - 'echo "PIPELINE_STOP_TIME=$(date +%T.%N)" > pipeline_times_stop.env'
+  artifacts:
+    reports:
+      dotenv: pipeline_times_stop.env
+  tags:
+    - k8s
+
+# --- generate-report: Generate Performance Report + upload to S3 ---
+generate_report:
+  stage: metrics_report
+  image: ubuntu:22.04
+  needs:
+    - start_time
+    - ci_tests
+    - ct_tests
+    - stop_time
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends jq awscli coreutils
+    - ': "${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}"'
+    - ': "${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}"'
+    - ': "${AWS_REGION:?AWS_REGION is required}"'
+    - ': "${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}"'
+  script:
+    - |
+      # Overall pipeline start/stop times
+      PIPELINE_START="${PIPELINE_START_TIME}"
+      PIPELINE_STOP="${PIPELINE_STOP_TIME}"
+
+      START_EPOCH=$(date -d "$(date +%F) ${PIPELINE_START}" +%s%N)
+      STOP_EPOCH=$(date -d "$(date +%F) ${PIPELINE_STOP}" +%s%N)
+      PIPELINE_DIFF=$((STOP_EPOCH - START_EPOCH))
+      DURATION_SEC=$(awk -v d="${PIPELINE_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # Run metadata
+      RUN_DATE=$(date -u +%Y-%m-%d)
+      RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      export RUN_DATE
+
+      # CI job start/stop times
+      CI_START_TIME="${CI_START_TIME}"
+      CI_STOP_TIME="${CI_STOP_TIME}"
+
+      CI_START_EPOCH=$(date -d "$(date +%F) ${CI_START_TIME}" +%s%N)
+      CI_STOP_EPOCH=$(date -d "$(date +%F) ${CI_STOP_TIME}" +%s%N)
+      CI_DURATION_DIFF=$((CI_STOP_EPOCH - CI_START_EPOCH))
+      CI_DURATION_SEC=$(awk -v d="${CI_DURATION_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # CT job start/stop times
+      CT_START_TIME="${CT_START_TIME}"
+      CT_STOP_TIME="${CT_STOP_TIME}"
+
+      CT_START_EPOCH=$(date -d "$(date +%F) ${CT_START_TIME}" +%s%N)
+      CT_STOP_EPOCH=$(date -d "$(date +%F) ${CT_STOP_TIME}" +%s%N)
+      CT_DURATION_DIFF=$((CT_STOP_EPOCH - CT_START_EPOCH))
+      CT_DURATION_SEC=$(awk -v d="${CT_DURATION_DIFF}" 'BEGIN { printf "%.5f", d/1e9 }')
+
+      # Build JSONL record (GitLab equivalents of github.run_id / workflow)
+      cat <<EOF | jq -c . > performance.jsonl
+      {
+        "run_id": "${CI_PIPELINE_ID}",
+        "pipeline_call_time": "${PIPELINE_CALL_TS}",
+        "pipeline_start_time": "${PIPELINE_START}",
+        "pipeline_stop_time": "${PIPELINE_STOP}",
+        "pipeline_duration": ${DURATION_SEC},
+        "ci_start_time": "${CI_START_TIME}",
+        "ci_stop_time": "${CI_STOP_TIME}",
+        "ci_duration": ${CI_DURATION_SEC},
+        "ct_start_time": "${CT_START_TIME}",
+        "ct_stop_time": "${CT_STOP_TIME}",
+        "ct_duration": ${CT_DURATION_SEC}
+      }
+      EOF
+
+      FILE_NAME="gitlab-self-hosted${CI_PROJECT_NAME}-${CI_PIPELINE_ID}.jsonl"
+
+      aws s3 cp performance.jsonl \
+        "s3://${S3_BUCKET_NAME}/${S3_PREFIX}/run_date=${RUN_DATE}/${FILE_NAME}"
+  
+  tags:
+    - k8s

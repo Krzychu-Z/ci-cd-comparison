@@ -1,0 +1,149 @@
+image: golang:1.22
+
+options:
+  max-time: 60
+
+definitions:
+  caches:
+    gomodules: /go/pkg/mod
+
+  steps:
+    - step: &capture_pipeline_start
+        name: Capture pipeline start time 
+        script: 
+        - echo "PIPELINE_START=$(date +%T.%N)" >> "$BITBUCKET_PIPELINES_VARIABLES_PATH" 
+        output-variables: 
+          - PIPELINE_START
+
+    - step: &super_linter
+        name: Super-linter
+        image: ghcr.io/super-linter/super-linter:v8.2.1
+        script:
+          - bash scripts/super-linter.sh
+
+    - step: &ci_tests
+        name: CI tests (unit + build + functional)
+        caches:
+          - gomodules
+        script:
+          - bash scripts/ci_tests.sh
+        output-variables:
+          - CI_START_TIME
+          - CI_STOP_TIME
+
+    - step: &ct_tests
+        name: CT tests (long-running performance)
+        caches:
+          - gomodules
+        max-time: 30
+        script:
+          - bash scripts/ct_tests.sh
+        output-variables:
+          - CT_START_TIME
+          - CT_STOP_TIME
+
+    - step: &build_tarball
+        caches:
+          - gomodules
+        artifacts:
+          - dist/**
+
+    - step: &capture_pipeline_stop
+        name: Capture pipeline stop time 
+        script: 
+        - echo "PIPELINE_STOP=$(date +%T.%N)" >> "$BITBUCKET_PIPELINES_VARIABLES_PATH" 
+        output-variables: 
+          - PIPELINE_STOP
+pipelines:
+  custom:
+    simple-performance:
+      - variables:
+          - name: PIPELINE_CALL_TS
+
+      - step: *capture_pipeline_start
+      - step: *super_linter
+      - step: *ci_tests
+      - step: *ct_tests
+
+      - parallel:
+          steps:
+            - step:
+                <<: *build_tarball
+                name: Build linux amd64 tarball
+                script:
+                  - bash scripts/build_tarball.sh linux amd64 ""
+            - step:
+                <<: *build_tarball
+                name: Build windows amd64 tarball
+                script:
+                  - bash scripts/build_tarball.sh windows amd64 ".exe"
+            - step:
+                <<: *build_tarball
+                name: Build macOS amd64 tarball
+                script:
+                  - bash scripts/build_tarball.sh darwin amd64 ""
+
+      - step: *capture_pipeline_stop
+      - step:
+          name: Generate performance report and upload to S3
+          script:
+            - bash scripts/generate_performance_report.sh
+    simple-performance-k8s:
+      - variables:
+          - name: PIPELINE_CALL_TS
+
+      - step:
+          <<: *capture_pipeline_start
+          runs-on:
+            - self.hosted
+
+      - step:
+          <<: *super_linter
+          runs-on:
+            - self.hosted
+
+      - step:
+          <<: *ci_tests
+          runs-on:
+            - self.hosted
+
+      - step:
+          <<: *ct_tests
+          runs-on:
+            - self.hosted
+
+      - parallel:
+          steps:
+            - step:
+                <<: *build_tarball
+                name: Build linux amd64 tarball
+                runs-on:
+                  - self.hosted
+                script:
+                  - bash scripts/build_tarball.sh linux amd64 ""
+            - step:
+                <<: *build_tarball
+                name: Build windows amd64 tarball
+                runs-on:
+                  - self.hosted
+                script:
+                  - bash scripts/build_tarball.sh windows amd64 ".exe"
+            - step:
+                <<: *build_tarball
+                name: Build macOS amd64 tarball
+                runs-on:
+                  - self.hosted
+                script:
+                  - bash scripts/build_tarball.sh darwin amd64 ""
+
+      - step:
+          <<: *capture_pipeline_stop
+          runs-on:
+            - self.hosted
+
+      - step:
+          name: Generate performance report and upload to S3
+          script:
+            - bash scripts/generate_performance_report.sh "-self-hosted"
+          runs-on:
+            - self.hosted
